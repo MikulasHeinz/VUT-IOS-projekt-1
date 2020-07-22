@@ -45,7 +45,7 @@ if [ ! -d "$DIR" ]; then
 	exit 1
 fi
 
-#ignoring the root dir?
+#ignoring the root dir
 if [ "$REGEX" ]; then
 	if echo "$DIR" | grep -E -q "$REGEX" ; then
 	echo "file_ere covers name of the dir" >&2
