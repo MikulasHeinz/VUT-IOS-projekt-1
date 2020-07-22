@@ -1,0 +1,229 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+#declaring variables
+DIR=$(pwd)
+ND=1 #includes the root dir
+NF=0
+REGEX=''
+NORMALIZATION=0
+LONGEST_HASH_LINE=0
+NORMALIZATION_FACTOR=1
+
+SIZE_LESS_THAN_100B=0
+SIZE_LESS_THAN_1KiB=0
+SIZE_LESS_THAN_10KiB=0
+SIZE_LESS_THAN_100KiB=0
+SIZE_LESS_THAN_1MiB=0
+SIZE_LESS_THAN_10MiB=0
+SIZE_LESS_THAN_100MiB=0
+SIZE_LESS_THAN_1GiB=0
+SIZE_GR_OR_EQL_THAN_1GiB=0
+
+#read params
+while getopts :i:n o
+do 	case "$o" in
+	i)	REGEX="$OPTARG"
+	;;
+	n)	NORMALIZATION=1 ;;
+	*)	echo "wrong parameter" >&2
+			exit 1 ;;
+	esac
+done
+OPTIND=$((OPTIND-1))
+shift $OPTIND
+#check params
+if [ $# -eq 1 ]; then
+	DIR="$1"
+elif [ $# -gt 1 ]; then
+	echo "too many parameters" >&2
+	exit 1
+fi
+
+if [ ! -d "$DIR" ]; then
+	echo "not existing directory" >&2
+	exit 1
+fi
+
+#ignoring the root dir?
+if [ "$REGEX" ]; then
+	if echo "$DIR" | grep -E -q "$REGEX" ; then
+	echo "file_ere covers name of the dir" >&2
+	exit 1;
+	fi
+fi
+
+#function for reading files in dir, ignores hidden files, recursive
+read_dir ()
+{
+for file in "$1"/* ;
+do
+# we wanted to skip a file with this name
+	if [ "$REGEX" ] ; then
+		if echo "$file" | grep -E -q "$REGEX" ; then
+		continue
+		fi
+	fi
+# it is a directory
+	if [ -d "$file" ] ; then
+	ND=$((ND+1))
+	read_dir "$file"
+#it is a normal file
+	elif [ -f "$file" ] ; then
+	NF=$((NF+1))
+	TMP_SIZE=$(stat -c%s "$file")
+		if [ "$TMP_SIZE" -lt 100 ]; then
+			SIZE_LESS_THAN_100B=$((SIZE_LESS_THAN_100B+1))
+		elif [ "$TMP_SIZE" -lt 1024 ]; then
+			SIZE_LESS_THAN_1KiB=$((SIZE_LESS_THAN_1KiB+1))
+		elif [ "$TMP_SIZE" -lt 10240 ]; then
+		SIZE_LESS_THAN_10KiB=$((SIZE_LESS_THAN_10KiB+1))
+		elif [ "$TMP_SIZE" -lt 102400 ]; then
+			SIZE_LESS_THAN_100KiB=$((SIZE_LESS_THAN_100KiB+1))
+		elif [ "$TMP_SIZE" -lt 1048576 ]; then
+			SIZE_LESS_THAN_1MiB=$((SIZE_LESS_THAN_1MiB+1))
+		elif [ "$TMP_SIZE" -lt 10485760 ]; then
+		SIZE_LESS_THAN_10MiB=$((SIZE_LESS_THAN_10MiB+1))
+		elif [ "$TMP_SIZE" -lt 104857600 ]; then
+			SIZE_LESS_THAN_100MiB=$((SIZE_LESS_THAN_100MiB+1))
+		elif [ "$TMP_SIZE" -lt 1073741824 ]; then
+			SIZE_LESS_THAN_1GiB=$((SIZE_LESS_THAN_1GiB+1))
+		elif [ "$TMP_SIZE" -ge 1073741824 ]; then
+		SIZE_GR_OR_EQL_THAN_1GiB=$((SIZE_GR_OR_EQL_THAN_1GiB+1))
+		fi
+	fi
+done
+}
+read_dir "$DIR"
+
+#normalization
+#rounding down
+if [ $NORMALIZATION -eq 1 ] ; then
+	ROW_LENGTH=79
+	if [ "$(tput cols)" -ne 0 ] ; then
+	ROW_LENGTH=$(tput cols)
+	ROW_LENGTH=$((ROW_LENGTH-1))
+	fi
+	ROW_LENGTH=$((ROW_LENGTH-12))
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_100B"
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_1KiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_1KiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_10KiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_10KiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_100KiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_100KiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_1MiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_1MiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_10MiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_10MiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_100MiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_100MiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_LESS_THAN_1GiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_LESS_THAN_1GiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -lt "$SIZE_GR_OR_EQL_THAN_1GiB" ] ; then
+	LONGEST_HASH_LINE="$SIZE_GR_OR_EQL_THAN_1GiB"
+	fi
+	if [ "$LONGEST_HASH_LINE" -gt "$ROW_LENGTH" ] ; then
+	NORMALIZATION_FACTOR=$(echo "scale=2; $LONGEST_HASH_LINE / $ROW_LENGTH"| bc)
+	ROUND_NORM_FACTOR=${NORMALIZATION_FACTOR%.*}
+	#always round divisor up, so that there wont be empty space before the decimal point
+	ROUND_NORM_FACTOR=$((ROUND_NORM_FACTOR+1))
+
+		if [ "$SIZE_LESS_THAN_100B" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_100B=$(echo "scale=2; $SIZE_LESS_THAN_100B / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_100B=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_1KiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_1KiB=$(echo "scale=2; $SIZE_LESS_THAN_1KiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_1KiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_10KiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_10KiB=$(echo "scale=2; $SIZE_LESS_THAN_10KiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_10KiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_100KiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_100KiB=$(echo "scale=2; $SIZE_LESS_THAN_100KiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_100KiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_1MiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_1MiB=$(echo "scale=2; $SIZE_LESS_THAN_1MiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_1MiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_10MiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_10MiB=$(echo "scale=2; $SIZE_LESS_THAN_10MiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_10MiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_100MiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_100MiB=$(echo "scale=2; $SIZE_LESS_THAN_100MiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_100MiB=0
+		fi
+
+		if [ "$SIZE_LESS_THAN_1GiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_LESS_THAN_1GiB=$(echo "scale=2; $SIZE_LESS_THAN_1GiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_LESS_THAN_1GiB=0
+		fi
+		if [ "$SIZE_GR_OR_EQL_THAN_1GiB" -ge "$ROUND_NORM_FACTOR" ] ; then
+			SIZE_GR_OR_EQL_THAN_1GiB=$(echo "scale=2; $SIZE_GR_OR_EQL_THAN_1GiB / $NORMALIZATION_FACTOR" | bc)
+		else
+			SIZE_GR_OR_EQL_THAN_1GiB=0
+		fi
+	#floats to integers
+	SIZE_LESS_THAN_100B=${SIZE_LESS_THAN_100B%.*}
+	SIZE_LESS_THAN_1KiB=${SIZE_LESS_THAN_1KiB%.*}
+	SIZE_LESS_THAN_10KiB=${SIZE_LESS_THAN_10KiB%.*}
+	SIZE_LESS_THAN_100KiB=${SIZE_LESS_THAN_100KiB%.*}
+	SIZE_LESS_THAN_1MiB=${SIZE_LESS_THAN_1MiB%.*}
+	SIZE_LESS_THAN_10MiB=${SIZE_LESS_THAN_10MiB%.*}
+	SIZE_LESS_THAN_100MiB=${SIZE_LESS_THAN_100MiB%.*}
+	SIZE_LESS_THAN_1GiB=${SIZE_LESS_THAN_1GiB%.*}
+	SIZE_GR_OR_EQL_THAN_1GiB=${SIZE_GR_OR_EQL_THAN_1GiB%.*}
+	fi
+
+fi
+
+#hash printing function
+print_hash ()
+{
+	if [ "$1" -ne 0 ]; then
+		i=1;	while [ "$i" -le "$1" ]; do
+		printf "#"
+		i=$((i+1))
+		done
+	fi
+}
+
+#output
+echo "Root directory: $DIR"
+echo "Directories: $ND"
+echo "All files: $NF"
+echo "File size histogram: "
+printf "  <100 B  : " ; print_hash "$SIZE_LESS_THAN_100B"     ;printf '\n'
+printf "  <1 KiB  : " ; print_hash "$SIZE_LESS_THAN_1KiB"     ;printf '\n'
+printf "  <10 KiB : " ; print_hash "$SIZE_LESS_THAN_10KiB"    ;printf '\n'
+printf "  <100 KiB: " ; print_hash "$SIZE_LESS_THAN_100KiB"   ;printf '\n'
+printf "  <1 MiB  : " ; print_hash "$SIZE_LESS_THAN_1MiB"     ;printf '\n'
+printf "  <10 MiB : " ; print_hash "$SIZE_LESS_THAN_10MiB"    ;printf '\n'
+printf "  <100 MiB: " ; print_hash "$SIZE_LESS_THAN_100MiB"   ;printf '\n'
+printf "  <1 GiB  : " ; print_hash "$SIZE_LESS_THAN_1GiB"     ;printf '\n'
+printf "  >=1 GiB : " ; print_hash "$SIZE_GR_OR_EQL_THAN_1GiB";printf '\n'
